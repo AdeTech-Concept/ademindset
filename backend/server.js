@@ -18,7 +18,7 @@ app.post('/chat', async (req, res) => {
     const { message } = req.body;
 
     const response = await openai.chat.completions.create({
-      model: 'gpt-4.1-mini',
+      model: 'gpt-4o-mini',
       messages: [
         {
           role: 'system',
@@ -36,6 +36,8 @@ app.post('/chat', async (req, res) => {
       reply: response.choices[0].message.content,
     });
   } catch (error) {
+    console.log(error.message);
+    console.log(error.response?.data);
     console.log(error);
 
     res.status(500).json({
