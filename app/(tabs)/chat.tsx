@@ -62,7 +62,7 @@ export default function ChatScreen() {
 
     try {
       // Temporary fake AI response
-     const response = await fetch('http://10.95.102.227:3000/chat', {
+     const response = await fetch('https://ademindset.onrender.com/chat', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -73,6 +73,7 @@ export default function ChatScreen() {
     });
 
     const data = await response.json();
+    console.log(data);
 
     const aiMessage: Message = {
       id: (Date.now() + 1).toString(),
