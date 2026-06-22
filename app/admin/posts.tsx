@@ -1,4 +1,6 @@
+import { showAppAlert } from '../../contexts/app-alert';
 import { Ionicons } from '@expo/vector-icons';
+import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
 import {
@@ -10,7 +12,7 @@ import {
 } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
 import {
-  Alert,
+  ActivityIndicator,
   Image,
   Modal,
   ScrollView,
@@ -20,18 +22,25 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { getAppTheme } from '../../constants/app-theme';
+import { useThemePreference } from '../../contexts/theme-preference';
 import { app, db } from '../../firebaseConfig';
 
+const auth = getAuth(app);
 const adminEmail = 'josh0mathew@gmail.com';
 
 export default function PostsScreen() {
   const router = useRouter();
-  const auth = getAuth(app);
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
   const [posts, setPosts] = useState<any[]>([]);
   const [editingPost, setEditingPost] = useState<any>(null);
   const [editTitle, setEditTitle] = useState('');
   const [editCaption, setEditCaption] = useState('');
+  const [editImageUrl, setEditImageUrl] = useState('');
+  const [editImageUri, setEditImageUri] = useState('');
   const [modalVisible, setModalVisible] = useState(false);
+  const [savingEdit, setSavingEdit] = useState(false);
 
   useEffect(() => {
     const user = auth.currentUser;
@@ -42,13 +51,13 @@ export default function PostsScreen() {
     }
 
     if (user.email !== adminEmail) {
-      alert('Access denied');
+      showAppAlert('Access denied');
       router.replace('/(tabs)');
       return;
     }
 
     fetchPosts();
-  }, []);
+  }, [router]);
 
   const fetchPosts = async () => {
     try {
@@ -68,31 +77,93 @@ export default function PostsScreen() {
     setEditingPost(post);
     setEditTitle(post.title || '');
     setEditCaption(post.caption || '');
+    setEditImageUrl(post.image_url || '');
+    setEditImageUri('');
     setModalVisible(true);
+  };
+
+  const pickEditImage = async () => {
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 1,
+    });
+
+    if (!result.canceled) {
+      setEditImageUri(result.assets[0].uri);
+    }
+  };
+
+  const uploadToCloudinary = async (imageUri: string) => {
+    const formData = new FormData();
+
+    formData.append('file', {
+      uri: imageUri,
+      type: 'image/jpeg',
+      name: 'post-update.jpg',
+    } as any);
+
+    formData.append('upload_preset', 'ademindset');
+
+    const response = await fetch(
+      'https://api.cloudinary.com/v1_1/dz4gz8kvc/image/upload',
+      {
+        method: 'POST',
+        body: formData,
+      }
+    );
+
+    const data = await response.json();
+
+    if (!data.secure_url) {
+      throw new Error('Image upload failed');
+    }
+
+    return data.secure_url;
   };
 
   const saveEdit = async () => {
     if (!editingPost) return;
 
+    if (!editTitle.trim() || !editCaption.trim()) {
+      showAppAlert('Missing fields', 'Title and caption are required.');
+      return;
+    }
+
     try {
+      setSavingEdit(true);
+
+      const nextImageUrl = editImageUri
+        ? await uploadToCloudinary(editImageUri)
+        : editImageUrl;
+
       await updateDoc(doc(db, 'posts', editingPost.id), {
-        title: editTitle,
-        caption: editCaption,
+        title: editTitle.trim(),
+        caption: editCaption.trim(),
+        image_url: nextImageUrl,
       });
 
       setPosts(prev =>
         prev.map(post =>
           post.id === editingPost.id
-            ? { ...post, title: editTitle, caption: editCaption }
+            ? {
+                ...post,
+                title: editTitle.trim(),
+                caption: editCaption.trim(),
+                image_url: nextImageUrl,
+              }
             : post
         )
       );
 
       setEditingPost(null);
       setModalVisible(false);
-      alert('Post updated');
+      setEditImageUri('');
+      showAppAlert('Post updated');
     } catch (error) {
       console.log(error);
+      showAppAlert('Error', 'Could not update post.');
+    } finally {
+      setSavingEdit(false);
     }
   };
 
@@ -115,7 +186,7 @@ export default function PostsScreen() {
   };
 
   const deletePost = async (postId: string) => {
-    Alert.alert('Delete Post', 'Are you sure you want to remove this post?', [
+    showAppAlert('Delete Post', 'Are you sure you want to remove this post?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Delete',
@@ -132,8 +203,11 @@ export default function PostsScreen() {
     ]);
   };
 
+  const pinnedCount = posts.filter(post => post.pinned).length;
+  const imageCount = posts.filter(post => post.image_url).length;
+
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
         <View style={styles.headerIcon}>
           <Ionicons name="create-outline" size={25} color="#121212" />
@@ -141,40 +215,77 @@ export default function PostsScreen() {
 
         <View>
           <Text style={styles.eyebrow}>Content Control</Text>
-          <Text style={styles.title}>Manage Posts</Text>
+          <Text style={[styles.title, { color: theme.text }]}>Manage Posts</Text>
         </View>
       </View>
 
-      <View style={styles.summaryCard}>
-        <Text style={styles.summaryNumber}>{posts.length}</Text>
-        <Text style={styles.summaryLabel}>posts published</Text>
+      <View style={styles.statsRow}>
+        <View style={[styles.summaryCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.summaryNumber, { color: theme.text }]}>{posts.length}</Text>
+          <Text style={[styles.summaryLabel, { color: theme.muted }]}>Posts</Text>
+        </View>
+
+        <View style={[styles.summaryCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.summaryNumber, { color: theme.text }]}>{pinnedCount}</Text>
+          <Text style={[styles.summaryLabel, { color: theme.muted }]}>Pinned</Text>
+        </View>
+
+        <View style={[styles.summaryCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+          <Text style={[styles.summaryNumber, { color: theme.text }]}>{imageCount}</Text>
+          <Text style={[styles.summaryLabel, { color: theme.muted }]}>Images</Text>
+        </View>
       </View>
+
+      <TouchableOpacity
+        style={styles.uploadShortcut}
+        onPress={() => router.push('/admin/upload')}
+      >
+        <Ionicons name="add-circle-outline" size={19} color="#121212" />
+        <Text style={styles.uploadShortcutText}>Upload New Post</Text>
+      </TouchableOpacity>
 
       <ScrollView
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.listContent}
       >
         {posts.length === 0 ? (
-          <View style={styles.emptyCard}>
-            <Ionicons name="images-outline" size={34} color="#777" />
-            <Text style={styles.emptyTitle}>No posts uploaded yet</Text>
-            <Text style={styles.emptyText}>
+          <View style={[styles.emptyCard, { backgroundColor: theme.surface, borderColor: theme.border }]}>
+            <Ionicons name="images-outline" size={34} color={theme.muted} />
+            <Text style={[styles.emptyTitle, { color: theme.text }]}>No posts uploaded yet</Text>
+            <Text style={[styles.emptyText, { color: theme.muted }]}>
               Uploaded posts will appear here for editing.
             </Text>
           </View>
         ) : (
           posts.map(item => (
-            <View key={item.id} style={styles.postCard}>
-              {item.image_url && (
+            <View
+              key={item.id}
+              style={[
+                styles.postCard,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}
+            >
+              {item.image_url ? (
                 <Image
                   source={{ uri: item.image_url }}
                   style={styles.postImage}
                 />
+              ) : (
+                <View style={[styles.imageFallback, { backgroundColor: theme.surfaceAlt }]}>
+                  <Ionicons name="image-outline" size={34} color={theme.muted} />
+                </View>
               )}
+
+              <View style={styles.imageOverlay}>
+                <Ionicons name="calendar-outline" size={13} color="#fff" />
+                <Text style={styles.imageOverlayText}>
+                  {item.publishDate || item.scheduledDate || 'No date'}
+                </Text>
+              </View>
 
               <View style={styles.postBody}>
                 <View style={styles.postTitleRow}>
-                  <Text style={styles.postTitle} numberOfLines={2}>
+                  <Text style={[styles.postTitle, { color: theme.text }]} numberOfLines={2}>
                     {item.title}
                   </Text>
 
@@ -187,7 +298,7 @@ export default function PostsScreen() {
                 </View>
 
                 {!!item.caption && (
-                  <Text style={styles.caption} numberOfLines={2}>
+                  <Text style={[styles.caption, { color: theme.subtle }]} numberOfLines={2}>
                     {item.caption}
                   </Text>
                 )}
@@ -223,39 +334,105 @@ export default function PostsScreen() {
 
       <Modal visible={modalVisible} animationType="slide" transparent>
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
-            <Text style={styles.modalTitle}>Edit Post</Text>
+          <ScrollView
+            contentContainerStyle={styles.modalScroll}
+            showsVerticalScrollIndicator={false}
+          >
+            <View
+              style={[
+                styles.modalContent,
+                { backgroundColor: theme.surface, borderColor: theme.border },
+              ]}
+            >
+              <View style={styles.modalHeader}>
+                <View>
+                  <Text style={styles.modalEyebrow}>Post Editor</Text>
+                  <Text style={[styles.modalTitle, { color: theme.text }]}>Edit Post</Text>
+                </View>
 
-            <TextInput
-              style={styles.input}
-              value={editTitle}
-              onChangeText={setEditTitle}
-              placeholder="Title"
-              placeholderTextColor="#888"
-            />
-
-            <TextInput
-              style={styles.bioInput}
-              value={editCaption}
-              onChangeText={setEditCaption}
-              placeholder="Caption"
-              placeholderTextColor="#888"
-              multiline
-            />
-
-            <View style={styles.modalButtonRow}>
-              <TouchableOpacity style={styles.saveBtn} onPress={saveEdit}>
-                <Text style={styles.saveText}>Save</Text>
-              </TouchableOpacity>
+                <TouchableOpacity
+                  style={styles.closeButton}
+                  onPress={() => setModalVisible(false)}
+                >
+                  <Ionicons name="close" size={20} color="#fff" />
+                </TouchableOpacity>
+              </View>
 
               <TouchableOpacity
-                style={styles.cancelBtn}
-                onPress={() => setModalVisible(false)}
+                style={[
+                  styles.imagePickerCard,
+                  { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+                ]}
+                onPress={pickEditImage}
               >
-                <Text style={styles.cancelText}>Cancel</Text>
+                {editImageUri || editImageUrl ? (
+                  <Image
+                    source={{ uri: editImageUri || editImageUrl }}
+                    style={styles.editPreviewImage}
+                  />
+                ) : (
+                  <View style={styles.editPreviewFallback}>
+                    <Ionicons name="image-outline" size={36} color={theme.muted} />
+                  </View>
+                )}
+
+                <View style={styles.changeImagePill}>
+                  <Ionicons name="camera-outline" size={16} color="#121212" />
+                  <Text style={styles.changeImageText}>
+                    {editImageUri ? 'New picture selected' : 'Change picture'}
+                  </Text>
+                </View>
               </TouchableOpacity>
+
+              <TextInput
+                style={[
+                  styles.input,
+                  { backgroundColor: theme.surfaceAlt, color: theme.text },
+                ]}
+                value={editTitle}
+                onChangeText={setEditTitle}
+                placeholder="Title"
+                placeholderTextColor={theme.muted}
+              />
+
+              <TextInput
+                style={[
+                  styles.bioInput,
+                  { backgroundColor: theme.surfaceAlt, color: theme.text },
+                ]}
+                value={editCaption}
+                onChangeText={setEditCaption}
+                placeholder="Caption"
+                placeholderTextColor={theme.muted}
+                multiline
+              />
+
+              <View style={styles.modalButtonRow}>
+                <TouchableOpacity
+                  style={[styles.saveBtn, savingEdit && styles.disabledBtn]}
+                  onPress={saveEdit}
+                  disabled={savingEdit}
+                >
+                  {savingEdit ? (
+                    <ActivityIndicator color="#121212" />
+                  ) : (
+                    <>
+                      <Ionicons name="save-outline" size={18} color="#121212" />
+                      <Text style={styles.saveText}>Save Changes</Text>
+                    </>
+                  )}
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.cancelBtn}
+                  onPress={() => setModalVisible(false)}
+                  disabled={savingEdit}
+                >
+                  <Text style={styles.cancelText}>Cancel</Text>
+                </TouchableOpacity>
+              </View>
             </View>
-          </View>
+          </ScrollView>
         </View>
       </Modal>
     </View>
@@ -314,23 +491,47 @@ const styles = StyleSheet.create({
   },
 
   summaryCard: {
+    flex: 1,
     backgroundColor: '#1A1A1A',
-    borderRadius: 18,
+    borderRadius: 12,
     borderWidth: 1,
     borderColor: '#292929',
-    padding: 16,
-    marginBottom: 16,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
   },
 
   summaryNumber: {
     color: '#fff',
-    fontSize: 34,
+    fontSize: 22,
     fontWeight: '900',
   },
 
   summaryLabel: {
     color: '#888',
+    fontSize: 11,
     fontWeight: '800',
+  },
+
+  statsRow: {
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 10,
+  },
+
+  uploadShortcut: {
+    backgroundColor: '#7CFFB2',
+    borderRadius: 14,
+    minHeight: 48,
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+    marginBottom: 16,
+  },
+
+  uploadShortcutText: {
+    color: '#121212',
+    fontWeight: '900',
   },
 
   listContent: {
@@ -349,6 +550,33 @@ const styles = StyleSheet.create({
   postImage: {
     width: '100%',
     height: 190,
+  },
+
+  imageFallback: {
+    width: '100%',
+    height: 190,
+    backgroundColor: '#202020',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  imageOverlay: {
+    position: 'absolute',
+    top: 12,
+    left: 12,
+    backgroundColor: 'rgba(0,0,0,0.72)',
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 6,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+  },
+
+  imageOverlayText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '900',
   },
 
   postBody: {
@@ -442,6 +670,12 @@ const styles = StyleSheet.create({
     padding: 20,
   },
 
+  modalScroll: {
+    flexGrow: 1,
+    justifyContent: 'center',
+    paddingVertical: 28,
+  },
+
   modalContent: {
     backgroundColor: '#1A1A1A',
     borderRadius: 20,
@@ -450,11 +684,73 @@ const styles = StyleSheet.create({
     borderColor: '#292929',
   },
 
+  modalHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    marginBottom: 16,
+  },
+
+  modalEyebrow: {
+    color: '#FFD166',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
+  },
+
   modalTitle: {
     color: '#fff',
     fontSize: 22,
     fontWeight: '900',
-    marginBottom: 16,
+  },
+
+  closeButton: {
+    width: 38,
+    height: 38,
+    borderRadius: 19,
+    backgroundColor: '#252525',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  imagePickerCard: {
+    minHeight: 220,
+    borderRadius: 18,
+    overflow: 'hidden',
+    backgroundColor: '#202020',
+    borderWidth: 1,
+    borderColor: '#303030',
+    marginBottom: 12,
+  },
+
+  editPreviewImage: {
+    width: '100%',
+    height: 220,
+  },
+
+  editPreviewFallback: {
+    height: 220,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+
+  changeImagePill: {
+    position: 'absolute',
+    right: 12,
+    bottom: 12,
+    backgroundColor: '#7CFFB2',
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+  },
+
+  changeImageText: {
+    color: '#121212',
+    fontWeight: '900',
+    fontSize: 12,
   },
 
   input: {
@@ -482,11 +778,14 @@ const styles = StyleSheet.create({
   },
 
   saveBtn: {
-    backgroundColor: '#2F80ED',
+    backgroundColor: '#7CFFB2',
     padding: 15,
     borderRadius: 14,
     flex: 1,
     alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
   },
 
   cancelBtn: {
@@ -498,12 +797,16 @@ const styles = StyleSheet.create({
   },
 
   saveText: {
-    color: '#fff',
+    color: '#121212',
     fontWeight: '900',
   },
 
   cancelText: {
     color: '#fff',
     fontWeight: '900',
+  },
+
+  disabledBtn: {
+    opacity: 0.7,
   },
 });

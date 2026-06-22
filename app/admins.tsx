@@ -1,13 +1,16 @@
+import { showAppAlert } from '../contexts/app-alert';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
 import { addDoc, collection, deleteDoc, doc, getDocs, updateDoc } from 'firebase/firestore';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
+import { ActivityIndicator, Image, Modal, ScrollView, StyleSheet, Text, TextInput, TouchableOpacity, View } from 'react-native';
 import { app, db } from '../firebaseConfig';
+
+const auth = getAuth(app);
+
 export default function AdminScreen() {
   const router = useRouter();
-  const auth = getAuth(app);
   const [editingPost, setEditingPost] = useState(null);
   const [editTitle, setEditTitle] = useState('');
   const [editCaption, setEditCaption] = useState('');
@@ -31,12 +34,12 @@ export default function AdminScreen() {
 
     // BLOCK NON-ADMINS
     if (user.email !== adminEmail) {
-      alert('Access denied');
+      showAppAlert('Access denied');
       router.replace('/(tabs)');
       return;
     }
 
-  }, []);
+  }, [router]);
 
   useEffect(() => {
     fetchPosts();
@@ -94,7 +97,7 @@ export default function AdminScreen() {
 
       setEditingPost(null);
       setModalVisible(false);
-      alert('Post updated 🔥');
+      showAppAlert('Post updated');
 
     } catch (error) {
       console.log(error);
@@ -113,7 +116,7 @@ export default function AdminScreen() {
   };
 
   const deletePost = async (postId) => {
-    Alert.alert(
+    showAppAlert(
       'Delete Post',
       'Are you sure you want to remove this post?',
       [
@@ -147,7 +150,7 @@ export default function AdminScreen() {
   const uploadPost = async () => {
    
     if (!image || !title || !caption) {
-      return alert('Fill all fields');
+      return showAppAlert('Fill all fields');
     }
     
     setUploading(true);
@@ -181,12 +184,12 @@ export default function AdminScreen() {
       await addDoc(collection(db, 'posts'), {
         image_url: data.secure_url,
         title,
-        userId: auth.currentUser.uid,
+        userId: auth.currentUser?.uid,
         caption,
         createdAt: new Date(),
       });
 
-      alert('Post uploaded 🔥');
+      showAppAlert('Post uploaded');
       fetchPosts();
 
       setImage(null);
@@ -408,7 +411,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     marginBottom: 10,
     height: 120,
-    textAlignVertical: 'top', // 🔥 important (Android fix)
+    textAlignVertical: 'top',
     },
 
     manageTitle: {

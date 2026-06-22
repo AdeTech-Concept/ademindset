@@ -1,5 +1,4 @@
 import {
-  ActivityIndicator,
   FlatList,
   KeyboardAvoidingView,
   Platform,
@@ -11,6 +10,7 @@ import {
 } from 'react-native';
 
 import { Ionicons } from '@expo/vector-icons';
+import { useLocalSearchParams } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
 
 import { Colors } from '@/constants/theme';
@@ -23,18 +23,17 @@ interface Message {
 }
 
 export default function ChatScreen() {
+  const params = useLocalSearchParams<{ prompt?: string }>();
   const theme = useColorScheme() ?? 'light';
   const colors = Colors[theme];
 
   const [input, setInput] = useState('');
-  const [loading, setLoading] = useState(false);
-
-  const [messages, setMessages] = useState<Message[]>([
+  const [messages] = useState<Message[]>([
     {
       id: '1',
       role: 'assistant',
       content:
-        'Hey 👋 I’m Ademindset AI. How can I help you today?',
+        'Vidia Coach is coming soon. The AI feature is being prepared, so chatting is disabled for now.',
     },
   ]);
 
@@ -46,57 +45,23 @@ export default function ChatScreen() {
     }, 100);
   }, [messages]);
 
-  const sendMessage = async () => {
-    if (!input.trim()) return;
+  useEffect(() => {
+    if (!params.prompt) return;
 
-    const userMessage: Message = {
-      id: Date.now().toString(),
-      role: 'user',
-      content: input,
-    };
-
-    setMessages((prev) => [...prev, userMessage]);
-
-    setInput('');
-    setLoading(true);
-
-    try {
-      // Temporary fake AI response
-     const response = await fetch('https://ademindset.onrender.com/chat', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        message: input,
-      }),
-    });
-
-    const data = await response.json();
-    console.log(data);
-
-    const aiMessage: Message = {
-      id: (Date.now() + 1).toString(),
-      role: 'assistant',
-      content: data.reply,
-    };
-
-    setMessages((prev) => [...prev, aiMessage]);
-
-    setLoading(false);
-    } catch (error) {
-      console.log(error);
-      setLoading(false);
-    }
-  };
+    setInput(params.prompt);
+  }, [params.prompt]);
 
   return (
     <KeyboardAvoidingView
-      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      style={{
-        flex: 1,
-        backgroundColor: colors.background,
-      }}>
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 0}
+      style={[
+        styles.keyboardView,
+        {
+          backgroundColor: colors.background,
+        },
+      ]}
+    >
       <View
         style={{
           flex: 1,
@@ -104,6 +69,11 @@ export default function ChatScreen() {
         }}>
         {/* Header */}
         <View style={styles.header}>
+          <View style={styles.statusPill}>
+            <Ionicons name="lock-closed" size={14} color="#121212" />
+            <Text style={styles.statusText}>Coming soon</Text>
+          </View>
+
           <Text
             style={[
               styles.title,
@@ -111,7 +81,7 @@ export default function ChatScreen() {
                 color: colors.text,
               },
             ]}>
-            Ademindset AI
+            Vidia Coach
           </Text>
 
           <Text
@@ -119,7 +89,7 @@ export default function ChatScreen() {
               color: colors.icon,
               marginTop: 4,
             }}>
-            Your personal AI assistant
+            Your personal mindset coach is being prepared
           </Text>
         </View>
 
@@ -128,6 +98,8 @@ export default function ChatScreen() {
           ref={flatListRef}
           data={messages}
           keyExtractor={(item) => item.id}
+          keyboardShouldPersistTaps="handled"
+          keyboardDismissMode="interactive"
           contentContainerStyle={{
             paddingHorizontal: 16,
             paddingBottom: 20,
@@ -168,20 +140,6 @@ export default function ChatScreen() {
           }}
         />
 
-        {/* Typing Indicator */}
-        {loading && (
-          <View
-            style={{
-              paddingHorizontal: 20,
-              paddingBottom: 10,
-            }}>
-            <ActivityIndicator
-              size="small"
-              color={colors.primary}
-            />
-          </View>
-        )}
-
         {/* Input */}
         <View
           style={[
@@ -201,29 +159,31 @@ export default function ChatScreen() {
             <TextInput
               value={input}
               onChangeText={setInput}
-              placeholder="Ask Ademindset AI anything..."
+              placeholder="Vidia Coach is coming soon"
               placeholderTextColor={colors.icon}
               multiline
+              editable={false}
               style={[
                 styles.input,
                 {
                   color: colors.text,
+                  opacity: 0.55,
                 },
               ]}
             />
 
             <Pressable
-              onPress={sendMessage}
+              disabled
               style={[
                 styles.sendButton,
                 {
-                  backgroundColor: colors.primary,
+                  backgroundColor: colors.border,
                 },
               ]}>
               <Ionicons
-                name="send"
+                name="lock-closed"
                 size={20}
-                color="#fff"
+                color={colors.icon}
               />
             </Pressable>
           </View>
@@ -234,9 +194,32 @@ export default function ChatScreen() {
 }
 
 const styles = StyleSheet.create({
+  keyboardView: {
+    flex: 1,
+  },
+
   header: {
     paddingHorizontal: 20,
     marginBottom: 20,
+  },
+
+  statusPill: {
+    alignSelf: 'flex-start',
+    backgroundColor: '#FFD166',
+    borderRadius: 999,
+    paddingHorizontal: 11,
+    paddingVertical: 7,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 5,
+    marginBottom: 12,
+  },
+
+  statusText: {
+    color: '#121212',
+    fontSize: 12,
+    fontWeight: '900',
+    textTransform: 'uppercase',
   },
 
   title: {

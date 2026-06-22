@@ -9,6 +9,8 @@ import {
   TouchableWithoutFeedback,
   View,
 } from 'react-native';
+import { getAppTheme } from '../constants/app-theme';
+import { useThemePreference } from '../contexts/theme-preference';
 
 export default function PostCard({
   item,
@@ -20,6 +22,8 @@ export default function PostCard({
   showRemoveSave,
 }: any) {
   const router = useRouter();
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
   const [lastTap, setLastTap] = useState<any>(null);
 
   const handleDoubleTap = () => {
@@ -35,12 +39,18 @@ export default function PostCard({
   return (
     <TouchableOpacity
       activeOpacity={0.9}
-      style={styles.card}
+      style={[
+        styles.card,
+        {
+          backgroundColor: theme.surface,
+          borderColor: theme.border,
+        },
+      ]}
       onPress={() => router.push(`/post/${item.id}`)}
     >
       {item.image_url && (
         <TouchableWithoutFeedback onPress={handleDoubleTap}>
-          <View style={styles.imageWrap}>
+          <View style={[styles.imageWrap, { backgroundColor: theme.raised }]}>
             <Image
               source={{ uri: item.image_url }}
               style={styles.image}
@@ -52,7 +62,7 @@ export default function PostCard({
 
       <View style={styles.content}>
         <View style={styles.titleRow}>
-          <Text style={styles.title} numberOfLines={2}>
+          <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
             {item.title}
           </Text>
 
@@ -65,7 +75,7 @@ export default function PostCard({
         </View>
 
         {!!item.caption && (
-          <Text style={styles.caption} numberOfLines={2}>
+          <Text style={[styles.caption, { color: theme.subtle }]} numberOfLines={2}>
             {item.caption}
           </Text>
         )}
@@ -109,11 +119,15 @@ export default function PostCard({
 }
 
 function ActionButton({ icon, label, active, activeColor, onPress }: any) {
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
+
   return (
     <TouchableOpacity
       activeOpacity={0.8}
       style={[
         styles.actionButton,
+        { backgroundColor: theme.raised },
         active && { backgroundColor: `${activeColor}22` },
       ]}
       onPress={onPress}
@@ -121,9 +135,9 @@ function ActionButton({ icon, label, active, activeColor, onPress }: any) {
       <Ionicons
         name={icon}
         size={19}
-        color={active ? activeColor : '#999'}
+        color={active ? activeColor : theme.muted}
       />
-      <Text style={[styles.actionLabel, active && { color: activeColor }]}>
+      <Text style={[styles.actionLabel, { color: theme.muted }, active && { color: activeColor }]}>
         {label}
       </Text>
     </TouchableOpacity>

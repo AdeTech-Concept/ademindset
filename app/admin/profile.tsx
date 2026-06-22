@@ -1,3 +1,4 @@
+import { showAppAlert } from '../../contexts/app-alert';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useFocusEffect, useRouter } from 'expo-router';
@@ -12,7 +13,6 @@ import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   ScrollView,
   StyleSheet,
@@ -22,12 +22,14 @@ import {
   View,
 } from 'react-native';
 import { app, db } from '../../firebaseConfig';
+import { useThemePreference } from '../../contexts/theme-preference';
 
 const auth = getAuth(app);
 const adminEmail = 'josh0mathew@gmail.com';
 
 export default function AdminProfileScreen() {
   const router = useRouter();
+  const { themePreference, setThemePreference } = useThemePreference();
 
   const [userData, setUserData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -48,51 +50,7 @@ export default function AdminProfileScreen() {
     mostCommentedPost: null,
   });
 
-  useFocusEffect(
-    useCallback(() => {
-      const fetchAdminProfile = async () => {
-        setLoading(true);
-
-        try {
-          const user = auth.currentUser;
-
-          if (!user) {
-            setUserData(null);
-            router.replace('/login');
-            return;
-          }
-
-          if (user.email !== adminEmail) {
-            Alert.alert('Access denied', 'Only the admin can open this page.');
-            router.replace('/(tabs)');
-            return;
-          }
-
-          const userRef = doc(db, 'users', user.uid);
-          const userSnap = await getDoc(userRef);
-
-          if (userSnap.exists()) {
-            const data = userSnap.data();
-
-            setUserData(data);
-            setName(data.name || '');
-            setBio(data.bio || '');
-            setAvatar(data.avatar || '');
-          }
-
-          await fetchAnalytics();
-        } catch (error) {
-          console.log(error);
-        } finally {
-          setLoading(false);
-        }
-      };
-
-      fetchAdminProfile();
-    }, [])
-  );
-
-  const fetchAnalytics = async () => {
+  const fetchAnalytics = useCallback(async () => {
     const [postsSnapshot, usersSnapshot, commentsSnapshot] =
       await Promise.all([
         getDocs(collection(db, 'posts')),
@@ -149,7 +107,51 @@ export default function AdminProfileScreen() {
           .slice()
           .sort((a, b) => b.commentCount - a.commentCount)[0] || null,
     });
-  };
+  }, []);
+
+  useFocusEffect(
+    useCallback(() => {
+      const fetchAdminProfile = async () => {
+        setLoading(true);
+
+        try {
+          const user = auth.currentUser;
+
+          if (!user) {
+            setUserData(null);
+            router.replace('/login');
+            return;
+          }
+
+          if (user.email !== adminEmail) {
+            showAppAlert('Access denied', 'Only the admin can open this page.');
+            router.replace('/(tabs)');
+            return;
+          }
+
+          const userRef = doc(db, 'users', user.uid);
+          const userSnap = await getDoc(userRef);
+
+          if (userSnap.exists()) {
+            const data = userSnap.data();
+
+            setUserData(data);
+            setName(data.name || '');
+            setBio(data.bio || '');
+            setAvatar(data.avatar || '');
+          }
+
+          await fetchAnalytics();
+        } catch (error) {
+          console.log(error);
+        } finally {
+          setLoading(false);
+        }
+      };
+
+      fetchAdminProfile();
+    }, [fetchAnalytics, router])
+  );
 
   const saveProfile = async () => {
     try {
@@ -166,10 +168,10 @@ export default function AdminProfileScreen() {
       setUserData((prev: any) => ({ ...prev, name, bio }));
       setEditing(false);
 
-      Alert.alert('Success', 'Profile updated');
+      showAppAlert('Success', 'Profile updated');
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Could not update profile');
+      showAppAlert('Error', 'Could not update profile');
     }
   };
 
@@ -178,7 +180,7 @@ export default function AdminProfileScreen() {
       const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
 
       if (!permission.granted) {
-        Alert.alert(
+        showAppAlert(
           'Permission needed',
           'Please allow photo access to update your profile picture.'
         );
@@ -195,7 +197,7 @@ export default function AdminProfileScreen() {
       }
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Could not pick image');
+      showAppAlert('Error', 'Could not pick image');
     }
   };
 
@@ -223,7 +225,7 @@ export default function AdminProfileScreen() {
       const data = await response.json();
 
       if (!data.secure_url) {
-        Alert.alert('Error', 'Image upload failed');
+        showAppAlert('Error', 'Image upload failed');
         return;
       }
 
@@ -236,10 +238,10 @@ export default function AdminProfileScreen() {
       setAvatar(data.secure_url);
       setUserData((prev: any) => ({ ...prev, avatar: data.secure_url }));
 
-      Alert.alert('Success', 'Profile picture updated');
+      showAppAlert('Success', 'Profile picture updated');
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Could not upload profile picture');
+      showAppAlert('Error', 'Could not upload profile picture');
     }
   };
 
@@ -248,22 +250,22 @@ export default function AdminProfileScreen() {
       const user = auth.currentUser;
 
       if (!user?.email) {
-        Alert.alert('Error', 'No signed-in admin found.');
+        showAppAlert('Error', 'No signed-in admin found.');
         return;
       }
 
       if (!currentPassword || !newPassword || !confirmPassword) {
-        Alert.alert('Missing fields', 'Fill all password fields.');
+        showAppAlert('Missing fields', 'Fill all password fields.');
         return;
       }
 
       if (newPassword.length < 6) {
-        Alert.alert('Weak password', 'Password must be at least 6 characters.');
+        showAppAlert('Weak password', 'Password must be at least 6 characters.');
         return;
       }
 
       if (newPassword !== confirmPassword) {
-        Alert.alert('Mismatch', 'New passwords do not match.');
+        showAppAlert('Mismatch', 'New passwords do not match.');
         return;
       }
 
@@ -281,12 +283,25 @@ export default function AdminProfileScreen() {
       setNewPassword('');
       setConfirmPassword('');
 
-      Alert.alert('Success', 'Password changed successfully.');
+      showAppAlert('Success', 'Password changed successfully.');
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Could not change password. Check the old password.');
+      showAppAlert('Error', 'Could not change password. Check the old password.');
     } finally {
       setChangingPassword(false);
+    }
+  };
+
+  const handleThemeChange = async (theme: 'light' | 'dark') => {
+    try {
+      await setThemePreference(theme);
+      setUserData((prev: any) => ({
+        ...prev,
+        themePreference: theme,
+      }));
+    } catch (error) {
+      console.log('Theme update error:', error);
+      showAppAlert('Error', 'Could not update theme.');
     }
   };
 
@@ -296,7 +311,7 @@ export default function AdminProfileScreen() {
       router.replace('/login');
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Could not log out');
+      showAppAlert('Error', 'Could not log out');
     }
   };
 
@@ -378,6 +393,56 @@ export default function AdminProfileScreen() {
             </TouchableOpacity>
           </>
         )}
+      </View>
+
+      <View style={styles.section}>
+        <Text style={styles.sectionTitle}>Theme</Text>
+
+        <View style={styles.themeRow}>
+          <TouchableOpacity
+            style={[
+              styles.themeOption,
+              themePreference === 'dark' && styles.themeOptionActive,
+            ]}
+            onPress={() => handleThemeChange('dark')}
+          >
+            <Ionicons
+              name="moon-outline"
+              size={18}
+              color={themePreference === 'dark' ? '#121212' : '#fff'}
+            />
+            <Text
+              style={[
+                styles.themeOptionText,
+                themePreference === 'dark' && styles.themeOptionTextActive,
+              ]}
+            >
+              Dark
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={[
+              styles.themeOption,
+              themePreference === 'light' && styles.themeOptionActive,
+            ]}
+            onPress={() => handleThemeChange('light')}
+          >
+            <Ionicons
+              name="sunny-outline"
+              size={18}
+              color={themePreference === 'light' ? '#121212' : '#fff'}
+            />
+            <Text
+              style={[
+                styles.themeOptionText,
+                themePreference === 'light' && styles.themeOptionTextActive,
+              ]}
+            >
+              Light
+            </Text>
+          </TouchableOpacity>
+        </View>
       </View>
 
       <View style={styles.section}>
@@ -621,6 +686,38 @@ const styles = StyleSheet.create({
     fontSize: 20,
     fontWeight: '900',
     marginBottom: 14,
+  },
+
+  themeRow: {
+    flexDirection: 'row',
+    gap: 10,
+  },
+
+  themeOption: {
+    flex: 1,
+    minHeight: 48,
+    borderRadius: 14,
+    backgroundColor: '#242424',
+    borderWidth: 1,
+    borderColor: '#303030',
+    alignItems: 'center',
+    justifyContent: 'center',
+    flexDirection: 'row',
+    gap: 8,
+  },
+
+  themeOptionActive: {
+    backgroundColor: '#7CFFB2',
+    borderColor: '#7CFFB2',
+  },
+
+  themeOptionText: {
+    color: '#fff',
+    fontWeight: '900',
+  },
+
+  themeOptionTextActive: {
+    color: '#121212',
   },
 
   analyticsGrid: {

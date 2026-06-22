@@ -1,17 +1,22 @@
 import { Ionicons } from '@expo/vector-icons';
 import { Tabs } from 'expo-router';
 import React from 'react';
+import { getAppTheme } from '../../constants/app-theme';
+import { useThemePreference } from '../../contexts/theme-preference';
 
 export default function TabLayout() {
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
+
   return (
     <Tabs
       screenOptions={{
         headerShown: false,
-        tabBarActiveTintColor: '#7CFFB2',
-        tabBarInactiveTintColor: '#777',
+        tabBarActiveTintColor: theme.primary,
+        tabBarInactiveTintColor: theme.muted,
         tabBarStyle: {
-          backgroundColor: '#151515',
-          borderTopColor: '#252525',
+          backgroundColor: theme.surface,
+          borderTopColor: theme.border,
           height: 68,
           paddingTop: 8,
           paddingBottom: 10,
@@ -39,6 +44,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="saved"
         options={{
+          href: null,
           title: 'Saved',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -53,6 +59,7 @@ export default function TabLayout() {
       <Tabs.Screen
         name="likes"
         options={{
+          href: null,
           title: 'Likes',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
@@ -79,13 +86,27 @@ export default function TabLayout() {
       />
 
       <Tabs.Screen
-        name="notifications"
+        name="books"
         options={{
-          title: 'Alerts',
+          title: 'Books',
           tabBarIcon: ({ color, focused }) => (
             <Ionicons
               size={24}
-              name={focused ? 'notifications' : 'notifications-outline'}
+              name={focused ? 'library' : 'library-outline'}
+              color={color}
+            />
+          ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="notifications"
+        options={{
+          title: 'Quiz',
+          tabBarIcon: ({ color, focused }) => (
+            <Ionicons
+              size={24}
+              name={focused ? 'help-circle' : 'help-circle-outline'}
               color={color}
             />
           ),
@@ -95,10 +116,10 @@ export default function TabLayout() {
       <Tabs.Screen
         name="chat"
         options={{
-          title: 'Chat',
+          title: 'Coach',
           tabBarIcon: ({ color, size }) => (
             <Ionicons
-              name="chatbubble-ellipses"
+              name="sparkles"
               size={size}
               color={color}
             />
@@ -117,6 +138,13 @@ export default function TabLayout() {
               color={color}
             />
           ),
+        }}
+      />
+
+      <Tabs.Screen
+        name="admin-chat"
+        options={{
+          href: null,
         }}
       />
     </Tabs>

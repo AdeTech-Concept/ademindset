@@ -1,9 +1,15 @@
 {
   "expo": {
-    "name": "ademindset",
-    "slug": "ademindset",
+    "name": "Vidia",
+    "slug": "vidia",
+    "version": "1.0.0",
+    "icon": "./assets/images/icon.png",
+    "splash": {
+      "image": "./assets/images/vidia.png"
+    },
     "android": {
       "package": "com.vidia.app",
+      "softwareKeyboardLayoutMode": "resize",
       "permissions": [
         "android.permission.READ_EXTERNAL_STORAGE",
         "android.permission.WRITE_EXTERNAL_STORAGE",
@@ -18,22 +24,27 @@
       [
         "expo-media-library",
         {
-          "photosPermission": "Allow Ademindset to access your photos.",
-          "savePhotosPermission": "Allow Ademindset to save photos.",
+          "photosPermission": "Allow Vidia to access your photos.",
+          "savePhotosPermission": "Allow Vidia to save photos.",
           "isAccessMediaLocationEnabled": true
         }
-      ]
+      ],
+      "expo-font",
+      "expo-document-picker",
+      "expo-router",
+      "@config-plugins/react-native-pdf"
     ],
-    "extra": {
-      "eas": {
-        "projectId": "23b7de53-cdf5-40d5-b8cc-2b3c7ae92961"
-      }
-    },
     "ios": {
-      "bundleIdentifier": "com.ademindset.app",
+      "bundleIdentifier": "com.vidia.app",
       "infoPlist": {
         "ITSAppUsesNonExemptEncryption": false
       }
-    }
+    },
+    "extra": {
+      "eas": {
+        "projectId": "d4b86557-6f7d-4ab5-ab82-2f8c2e78fe81"
+      }
+    },
+    "owner": "orthodox"
   }
 }

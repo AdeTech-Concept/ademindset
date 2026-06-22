@@ -4,12 +4,12 @@ export default function App() {
   
   return (
     <View style={styles.container}>
-      <Text style={styles.header}>Ademindset</Text>
+      <Text style={styles.header}>VIDIA</Text>
       <Text style={styles.subHeader}>
         For those who refuse to stay average
       </Text>
 
-      <ScrollView st yle={styles.feed}>
+      <ScrollView style={styles.feed}>
         <View style={styles.card}>
           <Text style={styles.text}>
             Nobody is coming to save you. Work harder.
@@ -18,7 +18,7 @@ export default function App() {
 
         <View style={styles.card}>
           <Text style={styles.text}>
-            Discipline will take you where motivation can't.
+            Discipline will take you where motivation can&apos;t.
           </Text>
         </View>
 

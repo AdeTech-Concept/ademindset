@@ -5,7 +5,6 @@ const cors = require('cors');
 const admin = require('firebase-admin');
 const fs = require('fs');
 const path = require('path');
-const OpenAI = require('openai');
 console.log('VIDIA SERVER VERSION 2026-06-13-A');
 const {
   GoogleGenerativeAI,
@@ -42,7 +41,6 @@ if (!admin.apps.length) {
 
 const firestore = admin.firestore();
 
-const openai = process.env.OPENAI_API_KEY ? new OpenAI() : null;
 const genAI = process.env.GEMINI_API_KEY
   ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
   : null;
@@ -73,6 +71,9 @@ const generateChatReply = async (message) => {
 
   throw new Error('No AI API key configured.');
 };
+
+const normalizeSecurityAnswer = (answer = '') =>
+  String(answer).trim().toLowerCase().replace(/\s+/g, ' ');
 
 const getBearerToken = (req) => {
   const authHeader = req.headers.authorization || '';
@@ -148,6 +149,153 @@ app.post('/chat', async (req, res) => {
     return res.status(500).json({
       error: 'Something went wrong.',
     });
+  }
+});
+
+app.post('/password-reset-requests', async (req, res) => {
+  try {
+    const {
+      email,
+      dateOfBirth,
+      securityQuestion,
+      securityAnswer,
+    } = req.body;
+
+    const normalizedEmail = String(email || '').trim().toLowerCase();
+
+    if (
+      !normalizedEmail ||
+      !normalizedEmail.includes('@') ||
+      !dateOfBirth ||
+      !securityQuestion ||
+      !securityAnswer
+    ) {
+      return res.status(400).json({
+        error: 'Email, date of birth, security question, and answer are required.',
+      });
+    }
+
+    const usersSnapshot = await firestore
+      .collection('users')
+      .where('email', '==', normalizedEmail)
+      .limit(1)
+      .get();
+
+    let matchedUserId = null;
+    let matchedUserName = '';
+    let securityMatched = false;
+
+    if (!usersSnapshot.empty) {
+      const userDoc = usersSnapshot.docs[0];
+      const userData = userDoc.data();
+
+      matchedUserId = userDoc.id;
+      matchedUserName = userData.name || '';
+      securityMatched =
+        String(userData.dateOfBirth || '').trim() === String(dateOfBirth).trim() &&
+        userData.securityQuestion === securityQuestion &&
+        userData.securityAnswerNormalized ===
+          normalizeSecurityAnswer(securityAnswer);
+    }
+
+    const requestRef = await firestore.collection('passwordResetRequests').add({
+      email: normalizedEmail,
+      dateOfBirth: String(dateOfBirth).trim(),
+      securityQuestion,
+      matchedUserId,
+      matchedUserName,
+      userFound: !!matchedUserId,
+      securityMatched,
+      status: 'pending',
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    });
+
+    return res.json({
+      success: true,
+      requestId: requestRef.id,
+      securityMatched,
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({
+      error: 'Could not submit password reset request.',
+    });
+  }
+});
+
+app.post('/support-messages', requireSignedInUser, async (req, res) => {
+  try {
+    const { message } = req.body;
+
+    if (!message || typeof message !== 'string' || !message.trim()) {
+      return res.status(400).json({ error: 'Message is required.' });
+    }
+
+    const userSnap = await firestore.collection('users').doc(req.authUser.uid).get();
+    const userData = userSnap.exists ? userSnap.data() : {};
+
+    const payload = {
+      userId: req.authUser.uid,
+      userEmail: req.authUser.email || userData.email || '',
+      userName: userData.name || req.authUser.email || 'User',
+      message: message.trim(),
+      adminReply: '',
+      status: 'open',
+      createdAt: admin.firestore.Timestamp.now(),
+      updatedAt: admin.firestore.Timestamp.now(),
+    };
+
+    const messageRef = await firestore.collection('supportMessages').add(payload);
+
+    return res.json({
+      success: true,
+      message: {
+        id: messageRef.id,
+        ...payload,
+      },
+    });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ error: 'Could not send support message.' });
+  }
+});
+
+app.get('/support-messages/my', requireSignedInUser, async (req, res) => {
+  try {
+    const snapshot = await firestore
+      .collection('supportMessages')
+      .where('userId', '==', req.authUser.uid)
+      .get();
+
+    const messages = snapshot.docs
+      .map((messageDoc) => {
+        const data = messageDoc.data();
+
+        return {
+          id: messageDoc.id,
+          ...data,
+          createdAtIso:
+            typeof data.createdAt?.toDate === 'function'
+              ? data.createdAt.toDate().toISOString()
+              : null,
+          updatedAtIso:
+            typeof data.updatedAt?.toDate === 'function'
+              ? data.updatedAt.toDate().toISOString()
+              : null,
+        };
+      })
+      .sort((a, b) => {
+        const aTime = a.createdAtIso ? new Date(a.createdAtIso).getTime() : 0;
+        const bTime = b.createdAtIso ? new Date(b.createdAtIso).getTime() : 0;
+
+        return aTime - bTime;
+      });
+
+    return res.json({ messages });
+  } catch (error) {
+    console.log(error);
+    return res.status(500).json({ error: 'Could not load support messages.' });
   }
 });
 

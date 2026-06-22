@@ -1,3 +1,4 @@
+import { showAppAlert } from '../../contexts/app-alert';
 import { Ionicons } from '@expo/vector-icons';
 import * as Clipboard from 'expo-clipboard';
 import * as FileSystem from 'expo-file-system/legacy';
@@ -7,19 +8,17 @@ import { getAuth } from 'firebase/auth';
 import {
   addDoc,
   collection,
-  deleteDoc,
   doc,
   getDoc,
-  getDocs,
   onSnapshot,
   orderBy,
   query,
   serverTimestamp,
+  setDoc,
   where,
 } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -30,12 +29,18 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { getAppTheme } from '../../constants/app-theme';
+import { useThemePreference } from '../../contexts/theme-preference';
 import { app, db } from '../../firebaseConfig';
 
 const auth = getAuth(app);
 
+const dateKey = (date = new Date()) => date.toISOString().slice(0, 10);
+
 export default function PostScreen() {
   const router = useRouter();
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
   const params = useLocalSearchParams();
   const id = params.id?.toString();
 
@@ -45,6 +50,8 @@ export default function PostScreen() {
   const [comments, setComments] = useState([]);
   const [text, setText] = useState('');
   const [userData, setUserData] = useState(null);
+  const [readMarked, setReadMarked] = useState(false);
+  const [markingRead, setMarkingRead] = useState(false);
 
   const scrollRef = useRef(null);
 
@@ -66,31 +73,6 @@ export default function PostScreen() {
       return `${Math.floor(diff / 86400)}d`;
     } catch {
       return '';
-    }
-  };
-
-  const deletePost = async postId => {
-    try {
-      await deleteDoc(doc(db, 'posts', postId));
-
-      const commentsQuery = query(
-        collection(db, 'comments'),
-        where('postId', '==', postId)
-      );
-
-      const commentsSnapshot = await getDocs(commentsQuery);
-
-      await Promise.all(
-        commentsSnapshot.docs.map(commentDoc =>
-          deleteDoc(commentDoc.ref)
-        )
-      );
-
-      Alert.alert('Success', 'Post deleted 🔥');
-      router.back();
-    } catch (error) {
-      console.log(error);
-      Alert.alert('Error', 'Could not delete post');
     }
   };
 
@@ -116,7 +98,7 @@ export default function PostScreen() {
     } catch (error) {
       console.log(error);
       setDownloaded(false);
-      Alert.alert('Error', 'Could not share image');
+      showAppAlert('Error', 'Could not share image');
     }
   };
 
@@ -143,7 +125,10 @@ export default function PostScreen() {
         const userSnap = await getDoc(userRef);
 
         if (userSnap.exists()) {
-          setUserData(userSnap.data());
+          const data = userSnap.data();
+
+          setUserData(data);
+          setReadMarked(!!id && (data.readPosts || []).includes(id));
         }
       } catch (error) {
         console.log(error);
@@ -151,7 +136,7 @@ export default function PostScreen() {
     };
 
     fetchCurrentUser();
-  }, []);
+  }, [id]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -254,7 +239,59 @@ export default function PostScreen() {
       setText('');
     } catch (error) {
       console.log(error);
-      Alert.alert('Error', 'Could not add comment');
+      showAppAlert('Error', 'Could not add comment');
+    }
+  };
+
+  const markPostRead = async () => {
+    try {
+      const user = auth.currentUser;
+
+      if (!user || !id) return;
+
+      if (readMarked) {
+        showAppAlert('Already done', 'This post is already in your progress.');
+        return;
+      }
+
+      setMarkingRead(true);
+
+      const userRef = doc(db, 'users', user.uid);
+      const userSnap = await getDoc(userRef);
+      const data = userSnap.exists() ? userSnap.data() : {};
+      const readPosts: string[] = data.readPosts || [];
+
+      if (readPosts.includes(id)) {
+        setReadMarked(true);
+        return;
+      }
+
+      const nextReadPosts = [...readPosts, id];
+
+      await setDoc(
+        userRef,
+        {
+          readPosts: nextReadPosts,
+          readCount: nextReadPosts.length,
+          lastReadPostId: id,
+          lastReadPostDate: dateKey(),
+          lastReadPostAt: new Date(),
+        },
+        { merge: true }
+      );
+
+      setUserData((prev: any) => ({
+        ...prev,
+        readPosts: nextReadPosts,
+        readCount: nextReadPosts.length,
+      }));
+      setReadMarked(true);
+      showAppAlert('Progress saved', 'Nice. This post was marked as read.');
+    } catch (error) {
+      console.log('Read progress error:', error);
+      showAppAlert('Error', 'Could not save reading progress.');
+    } finally {
+      setMarkingRead(false);
     }
   };
 
@@ -263,10 +300,22 @@ export default function PostScreen() {
       style={{ flex: 1 }}
       behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
     >
-      <View style={styles.container}>
+      <View style={[styles.container, { backgroundColor: theme.background }]}>
+        <TouchableOpacity
+          style={[
+            styles.backButton,
+            { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+          ]}
+          onPress={() => (router.canGoBack() ? router.back() : router.replace('/(tabs)'))}
+        >
+          <Ionicons name="chevron-back" size={20} color={theme.text} />
+          <Text style={[styles.backText, { color: theme.text }]}>Back</Text>
+        </TouchableOpacity>
+
         <ScrollView
           ref={scrollRef}
           contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
         >
           {post && (
             <View style={styles.postContainer}>
@@ -287,7 +336,7 @@ export default function PostScreen() {
                         : 'share-social-outline'
                     }
                     size={28}
-                    color={downloaded ? '#00FF99' : '#fff'}
+                    color={downloaded ? '#00FF99' : theme.text}
                   />
                 </TouchableOpacity>
 
@@ -295,14 +344,41 @@ export default function PostScreen() {
                   <Ionicons
                     name={copied ? 'checkmark-circle' : 'copy-outline'}
                     size={28}
-                    color={copied ? '#00FF99' : '#fff'}
+                    color={copied ? '#00FF99' : theme.text}
                   />
                 </TouchableOpacity>
               </View>
 
-              <Text style={styles.postTitle}>{post.title}</Text>
+              <Text style={[styles.postTitle, { color: theme.text }]}>{post.title}</Text>
 
-              <Text style={styles.postCaption}>{post.caption}</Text>
+              <Text style={[styles.postCaption, { color: theme.text }]}>{post.caption}</Text>
+
+              <TouchableOpacity
+                style={[
+                  styles.doneButton,
+                  readMarked && styles.doneButtonCompleted,
+                ]}
+                onPress={markPostRead}
+                disabled={readMarked || markingRead}
+              >
+                <Ionicons
+                  name={readMarked ? 'checkmark-circle' : 'checkmark-done-outline'}
+                  size={20}
+                  color={readMarked ? '#121212' : '#7CFFB2'}
+                />
+                <Text
+                  style={[
+                    styles.doneButtonText,
+                    readMarked && styles.doneButtonTextCompleted,
+                  ]}
+                >
+                  {readMarked
+                    ? 'Read and counted'
+                    : markingRead
+                      ? 'Saving...'
+                      : 'Done reading'}
+                </Text>
+              </TouchableOpacity>
             </View>
           )}
 
@@ -314,30 +390,38 @@ export default function PostScreen() {
                 </Text>
               </View>
 
-              <View style={styles.commentBox}>
+              <View style={[styles.commentBox, { backgroundColor: theme.surfaceAlt }]}>
                 <View style={styles.commentHeader}>
-                  <Text style={styles.commentUser}>
+                  <Text style={[styles.commentUser, { color: theme.text }]}>
                     {c.userName || 'User'}
                   </Text>
 
-                  <Text style={styles.commentTime}>
+                  <Text style={[styles.commentTime, { color: theme.muted }]}>
                     {timeAgo(c.createdAt)}
                   </Text>
                 </View>
 
-                <Text style={styles.commentText}>{c.text}</Text>
+                <Text style={[styles.commentText, { color: theme.text }]}>{c.text}</Text>
               </View>
             </View>
           ))}
         </ScrollView>
 
-        <View style={styles.inputRow}>
+        <View
+          style={[
+            styles.inputRow,
+            { backgroundColor: theme.background, borderTopColor: theme.border },
+          ]}
+        >
           <TextInput
             value={text}
             onChangeText={setText}
             placeholder="Say something..."
-            placeholderTextColor="#888"
-            style={styles.input}
+            placeholderTextColor={theme.muted}
+            style={[
+              styles.input,
+              { backgroundColor: theme.surfaceAlt, color: theme.text },
+            ]}
           />
 
           <TouchableOpacity style={styles.sendButton} onPress={addComment}>
@@ -358,7 +442,26 @@ const styles = StyleSheet.create({
 
   scrollContent: {
     paddingBottom: 100,
-    marginTop: 40,
+    marginTop: 16,
+  },
+
+  backButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#292929',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginTop: 44,
+  },
+
+  backText: {
+    color: '#fff',
+    fontWeight: '900',
   },
 
   postContainer: {
@@ -391,6 +494,32 @@ const styles = StyleSheet.create({
     color: '#fff',
     fontSize: 16,
     lineHeight: 22,
+  },
+
+  doneButton: {
+    minHeight: 52,
+    borderRadius: 14,
+    borderWidth: 1,
+    borderColor: '#7CFFB2',
+    marginTop: 18,
+    paddingHorizontal: 14,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: 8,
+  },
+
+  doneButtonCompleted: {
+    backgroundColor: '#7CFFB2',
+  },
+
+  doneButtonText: {
+    color: '#7CFFB2',
+    fontWeight: '900',
+  },
+
+  doneButtonTextCompleted: {
+    color: '#121212',
   },
 
   commentRow: {

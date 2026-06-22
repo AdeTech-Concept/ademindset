@@ -1,15 +1,21 @@
 import { Ionicons } from '@expo/vector-icons';
-import { useFocusEffect } from 'expo-router';
+import { useFocusEffect, useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
 import { collection, doc, getDoc, getDocs, setDoc } from 'firebase/firestore';
 import { useCallback, useState } from 'react';
-import { ScrollView, StyleSheet, Text, View } from 'react-native';
+import { ScrollView, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import PostCard from '../../components/PostCard';
+import { getAppTheme } from '../../constants/app-theme';
+import { useThemePreference } from '../../contexts/theme-preference';
 import { app, db } from '../../firebaseConfig';
 
+const auth = getAuth(app);
+
 export default function SavedScreen() {
+  const router = useRouter();
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
   const [savedPosts, setSavedPosts] = useState<any[]>([]);
-  const auth = getAuth(app);
 
   useFocusEffect(
     useCallback(() => {
@@ -110,30 +116,51 @@ export default function SavedScreen() {
   };
 
   return (
-    <View style={styles.container}>
+    <View style={[styles.container, { backgroundColor: theme.background }]}>
+      <TouchableOpacity
+        style={[
+          styles.backButton,
+          { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+        ]}
+        onPress={() => router.replace('/(tabs)/profile')}
+      >
+        <Ionicons name="chevron-back" size={20} color={theme.text} />
+        <Text style={[styles.backText, { color: theme.text }]}>Profile</Text>
+      </TouchableOpacity>
+
       <View style={styles.headerBlock}>
         <View style={styles.headerIcon}>
           <Ionicons name="bookmark" size={24} color="#121212" />
         </View>
 
         <View>
-          <Text style={styles.header}>Saved Posts</Text>
-          <Text style={styles.subHeader}>
+          <Text style={[styles.header, { color: theme.text }]}>Saved Posts</Text>
+          <Text style={[styles.subHeader, { color: theme.muted }]}>
             Your private library for later.
           </Text>
         </View>
       </View>
 
-      <View style={styles.countCard}>
-        <Text style={styles.count}>{savedPosts.length}</Text>
-        <Text style={styles.countLabel}>posts in your library</Text>
+      <View
+        style={[
+          styles.countCard,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+        ]}
+      >
+        <Text style={[styles.count, { color: theme.text }]}>{savedPosts.length}</Text>
+        <Text style={[styles.countLabel, { color: theme.muted }]}>posts in your library</Text>
       </View>
 
       {savedPosts.length === 0 ? (
-        <View style={styles.emptyCard}>
-          <Ionicons name="bookmark-outline" size={34} color="#777" />
-          <Text style={styles.emptyTitle}>Nothing saved yet</Text>
-          <Text style={styles.emptyText}>
+        <View
+          style={[
+            styles.emptyCard,
+            { backgroundColor: theme.surfaceAlt, borderColor: theme.border },
+          ]}
+        >
+          <Ionicons name="bookmark-outline" size={34} color={theme.muted} />
+          <Text style={[styles.emptyTitle, { color: theme.text }]}>Nothing saved yet</Text>
+          <Text style={[styles.emptyText, { color: theme.muted }]}>
             Tap the bookmark on posts you want to keep.
           </Text>
         </View>
@@ -169,6 +196,25 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     marginBottom: 18,
+  },
+
+  backButton: {
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 4,
+    backgroundColor: '#1E1E1E',
+    borderRadius: 999,
+    borderWidth: 1,
+    borderColor: '#292929',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    marginBottom: 16,
+  },
+
+  backText: {
+    color: '#fff',
+    fontWeight: '900',
   },
 
   headerIcon: {

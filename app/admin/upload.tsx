@@ -1,3 +1,4 @@
+import { showAppAlert } from '../../contexts/app-alert';
 import { Ionicons } from '@expo/vector-icons';
 import * as ImagePicker from 'expo-image-picker';
 import { useRouter } from 'expo-router';
@@ -16,15 +17,25 @@ import {
 } from 'react-native';
 import { app, db } from '../../firebaseConfig';
 
+const auth = getAuth(app);
 const adminEmail = 'josh0mathew@gmail.com';
+
+const dateKey = (date = new Date()) => date.toISOString().slice(0, 10);
+
+const addDays = (dateString: string, days: number) => {
+  const date = new Date(`${dateString}T00:00:00`);
+  date.setDate(date.getDate() + days);
+
+  return dateKey(date);
+};
 
 export default function AdminUploadScreen() {
   const router = useRouter();
-  const auth = getAuth(app);
 
   const [images, setImages] = useState<string[]>([]);
   const [title, setTitle] = useState('');
   const [caption, setCaption] = useState('');
+  const [scheduleStartDate, setScheduleStartDate] = useState(dateKey());
   const [uploading, setUploading] = useState(false);
 
   useEffect(() => {
@@ -36,10 +47,10 @@ export default function AdminUploadScreen() {
     }
 
     if (user.email !== adminEmail) {
-      alert('Access denied');
+      showAppAlert('Access denied');
       router.replace('/(tabs)');
     }
-  }, []);
+  }, [router]);
 
   const pickImages = async () => {
     const result = await ImagePicker.launchImageLibraryAsync({
@@ -91,8 +102,12 @@ export default function AdminUploadScreen() {
 
     if (!user) return;
 
-    if (images.length === 0 || !title || !caption) {
-      return alert('Select images and fill all fields');
+    if (images.length === 0 || !title || !caption || !scheduleStartDate) {
+      return showAppAlert('Select images and fill all fields');
+    }
+
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(scheduleStartDate)) {
+      return showAppAlert('Use the schedule date format YYYY-MM-DD');
     }
 
     setUploading(true);
@@ -101,10 +116,14 @@ export default function AdminUploadScreen() {
       const uploadedUrls = await Promise.all(
         images.map(imageUri => uploadToCloudinary(imageUri))
       );
+      const uploadDate = dateKey();
+      const uploadedAt = new Date();
 
       await Promise.all(
-        uploadedUrls.map((imageUrl, index) =>
-          addDoc(collection(db, 'posts'), {
+        uploadedUrls.map((imageUrl, index) => {
+          const publishDate = addDays(scheduleStartDate, index);
+
+          return addDoc(collection(db, 'posts'), {
             image_url: imageUrl,
             title:
               uploadedUrls.length > 1
@@ -113,19 +132,24 @@ export default function AdminUploadScreen() {
             caption,
             userId: user.uid,
             pinned: false,
-            createdAt: new Date(),
-          })
-        )
+            publishDate,
+            scheduledDate: publishDate,
+            uploadDate,
+            uploadedAt,
+            createdAt: uploadedAt,
+          });
+        })
       );
 
-      alert(`${uploadedUrls.length} post(s) uploaded`);
+      showAppAlert(`${uploadedUrls.length} post(s) scheduled`);
 
       setImages([]);
       setTitle('');
       setCaption('');
+      setScheduleStartDate(dateKey());
     } catch (error) {
       console.log(error);
-      alert('Could not upload posts');
+      showAppAlert('Could not upload posts');
     } finally {
       setUploading(false);
     }
@@ -197,6 +221,35 @@ export default function AdminUploadScreen() {
           multiline
         />
 
+        <View style={styles.scheduleCard}>
+          <View style={styles.scheduleHeader}>
+            <Ionicons name="calendar-outline" size={20} color="#7CFFB2" />
+            <Text style={styles.scheduleTitle}>Daily Schedule</Text>
+          </View>
+
+          <Text style={styles.scheduleText}>
+            First post date. If you select multiple pictures, each one is
+            scheduled for the next day.
+          </Text>
+
+          <TextInput
+            placeholder="YYYY-MM-DD"
+            placeholderTextColor="#888"
+            style={styles.input}
+            value={scheduleStartDate}
+            onChangeText={setScheduleStartDate}
+          />
+
+          <Text style={styles.schedulePreview}>
+            {images.length > 1
+              ? `${images.length} posts from ${scheduleStartDate} to ${addDays(
+                  scheduleStartDate,
+                  images.length - 1
+                )}`
+              : `Post date: ${scheduleStartDate}`}
+          </Text>
+        </View>
+
         <TouchableOpacity
           style={[styles.uploadBtn, uploading && styles.disabledBtn]}
           onPress={uploadPost}
@@ -208,7 +261,8 @@ export default function AdminUploadScreen() {
             <>
               <Ionicons name="rocket-outline" size={20} color="#121212" />
               <Text style={styles.uploadText}>
-                Upload {images.length || ''} Post{images.length > 1 ? 's' : ''}
+                Schedule {images.length || ''} Post
+                {images.length > 1 ? 's' : ''}
               </Text>
             </>
           )}
@@ -348,6 +402,39 @@ const styles = StyleSheet.create({
     marginBottom: 12,
     minHeight: 130,
     textAlignVertical: 'top',
+  },
+
+  scheduleCard: {
+    backgroundColor: '#202020',
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: '#303030',
+    padding: 14,
+    marginBottom: 12,
+  },
+
+  scheduleHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginBottom: 8,
+  },
+
+  scheduleTitle: {
+    color: '#fff',
+    fontSize: 17,
+    fontWeight: '900',
+  },
+
+  scheduleText: {
+    color: '#999',
+    lineHeight: 20,
+    marginBottom: 12,
+  },
+
+  schedulePreview: {
+    color: '#7CFFB2',
+    fontWeight: '800',
   },
 
   uploadBtn: {

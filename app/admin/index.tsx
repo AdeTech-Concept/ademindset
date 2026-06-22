@@ -1,7 +1,8 @@
+import { showAppAlert } from '../../contexts/app-alert';
 import { Ionicons } from '@expo/vector-icons';
 import { useFocusEffect, useRouter } from 'expo-router';
 import { getAuth } from 'firebase/auth';
-import { collection, getDocs } from 'firebase/firestore';
+import { collection, getDocs, QuerySnapshot } from 'firebase/firestore';
 import { useCallback, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,19 +13,35 @@ import {
   TouchableOpacity,
   View,
 } from 'react-native';
+import { getAppTheme } from '../../constants/app-theme';
+import { useThemePreference } from '../../contexts/theme-preference';
 import { app, db } from '../../firebaseConfig';
 
 const auth = getAuth(app);
 const adminEmail = 'josh0mathew@gmail.com';
 
+const emptySnapshot = {
+  docs: [],
+  size: 0,
+} as unknown as QuerySnapshot;
+
 export default function AdminDashboard() {
   const router = useRouter();
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
   const [loading, setLoading] = useState(true);
   const [analytics, setAnalytics] = useState<any>({
     totalPosts: 0,
     totalUsers: 0,
     totalLikes: 0,
     totalComments: 0,
+    totalBooks: 0,
+    activeUsers: 0,
+    completedQuizzes: 0,
+    aiUsage: 0,
+    supportMessages: 0,
+    passwordRequests: 0,
+    mostOpenedBook: null,
     mostLikedPost: null,
     mostCommentedPost: null,
     recentPosts: [],
@@ -42,17 +59,37 @@ export default function AdminDashboard() {
           }
 
           if (user.email !== adminEmail) {
-            alert('Access denied');
+            showAppAlert('Access denied');
             router.replace('/(tabs)');
             return;
           }
 
-          const [postsSnapshot, usersSnapshot, commentsSnapshot] =
-            await Promise.all([
-              getDocs(collection(db, 'posts')),
-              getDocs(collection(db, 'users')),
-              getDocs(collection(db, 'comments')),
-            ]);
+          const safeGetDocs = async (collectionName: string) => {
+            try {
+              return await getDocs(collection(db, collectionName));
+            } catch (error) {
+              console.log(`${collectionName} dashboard load error:`, error);
+              return emptySnapshot;
+            }
+          };
+
+          const [
+            postsSnapshot,
+            usersSnapshot,
+            commentsSnapshot,
+            booksSnapshot,
+            quizResultsSnapshot,
+            supportSnapshot,
+            passwordRequestsSnapshot,
+          ] = await Promise.all([
+            safeGetDocs('posts'),
+            safeGetDocs('users'),
+            safeGetDocs('comments'),
+            safeGetDocs('books'),
+            safeGetDocs('quizResults'),
+            safeGetDocs('supportMessages'),
+            safeGetDocs('passwordResetRequests'),
+          ]);
 
           const posts = postsSnapshot.docs.map(postDoc => ({
             id: postDoc.id,
@@ -87,6 +124,29 @@ export default function AdminDashboard() {
             commentCount: commentCounts[post.id] || 0,
           }));
 
+          const todayKey = new Date().toISOString().slice(0, 10);
+          let activeUsers = 0;
+          let aiUsage = 0;
+
+          usersSnapshot.docs.forEach(userDoc => {
+            const data = userDoc.data();
+
+            if (data.lastLoginDate === todayKey) {
+              activeUsers += 1;
+            }
+
+            aiUsage += data.aiConversationCount || 0;
+          });
+
+          const mostOpenedBook =
+            booksSnapshot.docs
+              .map(bookDoc => ({
+                id: bookDoc.id,
+                title: bookDoc.data().title || 'Untitled book',
+                openCount: bookDoc.data().openCount || 0,
+              }))
+              .sort((a, b) => b.openCount - a.openCount)[0] || null;
+
           const mostLikedPost =
             postsWithStats
               .slice()
@@ -110,6 +170,13 @@ export default function AdminDashboard() {
             totalPosts: postsSnapshot.size,
             totalUsers: usersSnapshot.size,
             totalComments: commentsSnapshot.size,
+            totalBooks: booksSnapshot.size,
+            activeUsers,
+            completedQuizzes: quizResultsSnapshot.size,
+            aiUsage,
+            supportMessages: supportSnapshot.size,
+            passwordRequests: passwordRequestsSnapshot.size,
+            mostOpenedBook,
             totalLikes: Object.values(likeCounts).reduce(
               (total, count) => total + count,
               0
@@ -126,7 +193,7 @@ export default function AdminDashboard() {
       };
 
       loadDashboard();
-    }, [])
+    }, [router])
   );
 
   const maxEngagement = Math.max(
@@ -137,45 +204,60 @@ export default function AdminDashboard() {
 
   if (loading) {
     return (
-      <View style={styles.loader}>
-        <ActivityIndicator color="#fff" />
+      <View style={[styles.loader, { backgroundColor: theme.background }]}>
+        <ActivityIndicator color={theme.primary} />
       </View>
     );
   }
 
   return (
     <ScrollView
-      style={styles.container}
+      style={[styles.container, { backgroundColor: theme.background }]}
       contentContainerStyle={styles.content}
       showsVerticalScrollIndicator={false}
     >
       <View style={styles.header}>
         <View style={styles.brandRow}>
           <Image
-            source={require('../../assets/images/logo.png')}
+            source={require('../../assets/images/vidia.png')}
             style={styles.logo}
           />
 
           <View>
             <Text style={styles.eyebrow}>Admin Overview</Text>
-            <Text style={styles.title}>Ademindset</Text>
+            <Text style={[styles.title, { color: theme.text }]}>Vidia</Text>
           </View>
         </View>
 
-        <TouchableOpacity
-          style={styles.profileButton}
-          onPress={() => router.push('/admin/profile')}
-        >
-          <Ionicons name="person-circle-outline" size={30} color="#fff" />
-        </TouchableOpacity>
+        <View style={styles.headerActions}>
+          <TouchableOpacity
+            accessibilityLabel="Exit admin"
+            style={styles.profileButton}
+            onPress={() => router.replace('/(tabs)')}
+          >
+            <Ionicons name="exit-outline" size={28} color="#FF4D4D" />
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.profileButton}
+            onPress={() => router.push('/admin/profile')}
+          >
+            <Ionicons name="person-circle-outline" size={30} color={theme.text} />
+          </TouchableOpacity>
+        </View>
       </View>
 
-      <View style={styles.heroPanel}>
+      <View
+        style={[
+          styles.heroPanel,
+          { backgroundColor: theme.surface, borderColor: theme.border },
+        ]}
+      >
         <Text style={styles.heroLabel}>Content health</Text>
-        <Text style={styles.heroNumber}>
+        <Text style={[styles.heroNumber, { color: theme.text }]}>
           {analytics.totalLikes + analytics.totalComments}
         </Text>
-        <Text style={styles.heroText}>
+        <Text style={[styles.heroText, { color: theme.muted }]}>
           Total engagement across likes and comments.
         </Text>
 
@@ -220,10 +302,46 @@ export default function AdminDashboard() {
           icon="chatbubble-outline"
           tone="#2F80ED"
         />
+        <StatCard
+          label="Books"
+          value={analytics.totalBooks}
+          icon="library-outline"
+          tone="#7CFFB2"
+        />
+        <StatCard
+          label="Active Today"
+          value={analytics.activeUsers}
+          icon="pulse-outline"
+          tone="#8B5CF6"
+        />
+        <StatCard
+          label="Quizzes Done"
+          value={analytics.completedQuizzes}
+          icon="help-circle-outline"
+          tone="#FFD166"
+        />
+        <StatCard
+          label="Coach Uses"
+          value={analytics.aiUsage}
+          icon="sparkles-outline"
+          tone="#2F80ED"
+        />
+        <StatCard
+          label="Support"
+          value={analytics.supportMessages}
+          icon="mail-unread-outline"
+          tone="#7CFFB2"
+        />
+        <StatCard
+          label="Resets"
+          value={analytics.passwordRequests}
+          icon="key-outline"
+          tone="#FFD166"
+        />
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Top Performers</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Top Performers</Text>
 
         <InsightCard
           label="Most liked"
@@ -240,10 +358,18 @@ export default function AdminDashboard() {
           icon="chatbubble"
           color="#2F80ED"
         />
+
+        <InsightCard
+          label="Most opened book"
+          title={analytics.mostOpenedBook?.title || 'No book opens yet'}
+          value={`${analytics.mostOpenedBook?.openCount || 0} opens`}
+          icon="library"
+          color="#8B5CF6"
+        />
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Quick Actions</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Quick Actions</Text>
 
         <View style={styles.actionGrid}>
           <ActionCard
@@ -259,10 +385,46 @@ export default function AdminDashboard() {
             onPress={() => router.push('/admin/posts')}
           />
           <ActionCard
+            title="Manage Comments"
+            subtitle="Review and delete"
+            icon="chatbubbles-outline"
+            onPress={() => router.push('/admin/comments')}
+          />
+          <ActionCard
+            title="Upload Books"
+            subtitle="Add PDF reading"
+            icon="cloud-upload-outline"
+            onPress={() => router.push('/admin/upload-books')}
+          />
+          <ActionCard
+            title="Manage Books"
+            subtitle="Edit, pin, delete"
+            icon="library-outline"
+            onPress={() => router.push('/admin/books')}
+          />
+          <ActionCard
             title="Manage Users"
             subtitle="Moderate accounts"
             icon="shield-checkmark-outline"
             onPress={() => router.push('/admin/users')}
+          />
+          <ActionCard
+            title="Support Inbox"
+            subtitle="Answer users"
+            icon="mail-unread-outline"
+            onPress={() => router.push('/admin/support')}
+          />
+          <ActionCard
+            title="Password Requests"
+            subtitle="Review resets"
+            icon="key-outline"
+            onPress={() => router.push('/admin/password-requests')}
+          />
+          <ActionCard
+            title="Quiz Questions"
+            subtitle="Build 10-question sets"
+            icon="help-circle-outline"
+            onPress={() => router.push('/admin/questions')}
           />
           <ActionCard
             title="Admin Profile"
@@ -274,17 +436,17 @@ export default function AdminDashboard() {
       </View>
 
       <View style={styles.section}>
-        <Text style={styles.sectionTitle}>Recent Posts</Text>
+        <Text style={[styles.sectionTitle, { color: theme.text }]}>Recent Posts</Text>
 
         {analytics.recentPosts.length === 0 ? (
-          <Text style={styles.emptyText}>No posts uploaded yet.</Text>
+          <Text style={[styles.emptyText, { color: theme.muted }]}>No posts uploaded yet.</Text>
         ) : (
           analytics.recentPosts.map((post: any) => (
             <View key={post.id} style={styles.recentRow}>
               <View style={styles.recentDot} />
               <View style={styles.recentTextBlock}>
-                <Text style={styles.recentTitle}>{post.title}</Text>
-                <Text style={styles.recentMeta}>
+                <Text style={[styles.recentTitle, { color: theme.text }]}>{post.title}</Text>
+                <Text style={[styles.recentMeta, { color: theme.muted }]}>
                   {post.likeCount} likes - {post.commentCount} comments
                 </Text>
               </View>
@@ -297,27 +459,37 @@ export default function AdminDashboard() {
 }
 
 function StatCard({ label, value, icon, tone }: any) {
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
+
   return (
-    <View style={styles.statCard}>
+    <View
+      style={[
+        styles.statCard,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+    >
       <View style={[styles.statIcon, { backgroundColor: tone }]}>
         <Ionicons name={icon} size={20} color="#121212" />
       </View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+      <Text style={[styles.statValue, { color: theme.text }]}>{value}</Text>
+      <Text style={[styles.statLabel, { color: theme.muted }]}>{label}</Text>
     </View>
   );
 }
 
 function ChartBar({ label, value, max, color }: any) {
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
   const width = `${Math.max((value / max) * 100, value > 0 ? 8 : 0)}%`;
 
   return (
     <View style={styles.chartRow}>
       <View style={styles.chartHeader}>
-        <Text style={styles.chartLabel}>{label}</Text>
-        <Text style={styles.chartValue}>{value}</Text>
+        <Text style={[styles.chartLabel, { color: theme.muted }]}>{label}</Text>
+        <Text style={[styles.chartValue, { color: theme.text }]}>{value}</Text>
       </View>
-      <View style={styles.chartTrack}>
+      <View style={[styles.chartTrack, { backgroundColor: theme.raised }]}>
         <View
           style={[
             styles.chartFill,
@@ -330,26 +502,43 @@ function ChartBar({ label, value, max, color }: any) {
 }
 
 function InsightCard({ label, title, value, icon, color }: any) {
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
+
   return (
-    <View style={styles.insightCard}>
+    <View
+      style={[
+        styles.insightCard,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+    >
       <View style={[styles.insightIcon, { backgroundColor: color }]}>
         <Ionicons name={icon} size={18} color="#fff" />
       </View>
       <View style={styles.insightCopy}>
         <Text style={styles.insightLabel}>{label}</Text>
-        <Text style={styles.insightTitle}>{title}</Text>
-        <Text style={styles.insightValue}>{value}</Text>
+        <Text style={[styles.insightTitle, { color: theme.text }]}>{title}</Text>
+        <Text style={[styles.insightValue, { color: theme.muted }]}>{value}</Text>
       </View>
     </View>
   );
 }
 
 function ActionCard({ title, subtitle, icon, onPress }: any) {
+  const { themePreference } = useThemePreference();
+  const theme = getAppTheme(themePreference);
+
   return (
-    <TouchableOpacity style={styles.actionCard} onPress={onPress}>
-      <Ionicons name={icon} size={24} color="#fff" />
-      <Text style={styles.actionTitle}>{title}</Text>
-      <Text style={styles.actionSub}>{subtitle}</Text>
+    <TouchableOpacity
+      style={[
+        styles.actionCard,
+        { backgroundColor: theme.surface, borderColor: theme.border },
+      ]}
+      onPress={onPress}
+    >
+      <Ionicons name={icon} size={24} color={theme.text} />
+      <Text style={[styles.actionTitle, { color: theme.text }]}>{title}</Text>
+      <Text style={[styles.actionSub, { color: theme.muted }]}>{subtitle}</Text>
     </TouchableOpacity>
   );
 }
@@ -414,6 +603,12 @@ const styles = StyleSheet.create({
     backgroundColor: '#1E1E1E',
     justifyContent: 'center',
     alignItems: 'center',
+  },
+
+  headerActions: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
   },
 
   heroPanel: {
